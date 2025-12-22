@@ -54,7 +54,7 @@ public class HttpOcrServer extends NanoHTTPD {
                 Log.e("error", "serve: ", e);
                 return newFixedLengthResponse(Response.Status.INTERNAL_ERROR,
                         "application/json",
-                        "{\"error\":\"" + e.getMessage() + "\"}");
+                        "{\"message\":\"" + e.getMessage() + "\",\"code\":500}");
             }
         }
         return newFixedLengthResponse("OCR Service Running");
