@@ -1,6 +1,6 @@
 
 # ppv4_onnx_ocr_server
-* onnxruntime
+* onnx
 * pp-ocrv4模型
 * NanoHTTPD
 
