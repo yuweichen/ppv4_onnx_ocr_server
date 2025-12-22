@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- App 主题 -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <!-- 主色 -->
+        <item name="colorPrimary">#2196F3</item>
+        <item name="colorPrimaryDark">#1976D2</item>
+        <item name="colorAccent">#FF4081</item>
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+
+    <!-- 前台服务通知主题 -->
+    <style name="ForegroundServiceTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <!-- 前台服务通知颜色（状态栏） -->
+        <item name="colorPrimary">#2196F3</item>
+        <item name="android:colorBackgroundCacheHint">@null</item>
+    </style>
+
+    <!-- 按钮样式 -->
+    <style name="ButtonStyle" parent="Widget.AppCompat.Button">
+        <item name="android:padding">12dp</item>
+        <item name="android:textColor">@android:color/white</item>
+        <item name="android:backgroundTint">#2196F3</item>
+        <item name="android:layout_margin">8dp</item>
+    </style>
+
+</resources>
