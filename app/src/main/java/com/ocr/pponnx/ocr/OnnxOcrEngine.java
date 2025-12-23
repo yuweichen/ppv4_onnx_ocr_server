@@ -125,6 +125,8 @@ public class OnnxOcrEngine {
 
         List<OcrResult> results = new ArrayList<>();
         for (PointF[] poly : boxes) {
+            //todo 计算坐标返回 deepseek
+
             // 5a. 可选裁剪 RotatedBox
             RotatedBox box = new RotatedBox(
                     OcrUtils.getBoxCenter(poly),
@@ -133,8 +135,6 @@ public class OnnxOcrEngine {
                     OcrUtils.getBoxAngle(poly)
             );
             Bitmap crop = OcrUtils.cropRotatedBox(resizedBitmap, box);
-
-            System.out.println(1);
 
             if (OcrConfig.Det.DO_ANGLE) {
                 // 5b. 执行 Cls（可选）
