@@ -29,7 +29,7 @@ public class DetPostProcess {
                     List<PointF> regionPoints = floodFillPoints(detOutput, visited, x, y, h, w);
                     if (regionPoints.size() < 3) continue; // 太小忽略
 
-                    // 调用你的 minAreaRect 得到旋转矩形
+                    // 调用 minAreaRect 得到旋转矩形
                     RotatedBox rotatedBox = minAreaRect(regionPoints);
                     float longSide = Math.max(rotatedBox.width, rotatedBox.height);
                     float padding = Math.max(5, Math.min(longSide * 0.1f, 30));
