@@ -79,11 +79,9 @@ public class DetPostProcess {
     }
 
     /**
-     * 占位，调用你的 minAreaRect
-     * 你自己的方法已经存在
+     *  minAreaRect
      */
     private static RotatedBox minAreaRect(List<PointF> hull) {
-        // 这里会调用你已有的方法
         return GeometryUtils.minAreaRect(hull);
     }
 }
