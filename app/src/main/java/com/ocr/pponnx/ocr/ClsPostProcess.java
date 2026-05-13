@@ -8,9 +8,6 @@ public class ClsPostProcess {
         ROTATE_180      // 需要旋转 180°
     }
 
-    /** 置信度阈值（可调） */
-    private static final float CLS_THRESH = 0.9f;
-
     /**
      * 根据 cls 输出判断方向
      *
@@ -30,7 +27,7 @@ public class ClsPostProcess {
         float score = scores[label];
 
         // 低置信度 → 当作正常方向
-        if (score < CLS_THRESH) {
+        if (score < OcrConfig.Cls.THRESH) {
             return TextDirection.HORIZONTAL;
         }
 

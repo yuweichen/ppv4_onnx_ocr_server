@@ -3,10 +3,8 @@ package com.ocr.pponnx.ocr;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.PointF;
-import android.graphics.RectF;
 import android.util.Base64;
 import android.util.Log;
 
@@ -35,22 +33,17 @@ public class OnnxOcrEngine {
 
     public OnnxOcrEngine(Context ctx) {
         try {
-            // 输出配置信息
             OcrConfig.logAllConfig();
-
             Log.i(TAG, "初始化ONNX OCR引擎...");
 
-            // 初始化环境
             env = OrtEnvironment.getEnvironment();
 
-            // 根据性能配置设置会话选项
             OrtSession.SessionOptions options = new OrtSession.SessionOptions();
             if (OcrConfig.Performance.MAX_CONCURRENT > 1) {
                 options.setInterOpNumThreads(OcrConfig.Performance.MAX_CONCURRENT);
                 options.setIntraOpNumThreads(OcrConfig.Performance.MAX_CONCURRENT);
             }
 
-            // 加载模型
             Log.i(TAG, "加载检测模型...");
             detSession = env.createSession(load(ctx, "ch_PP-OCRv4_det_infer.onnx"), options);
 
@@ -65,10 +58,8 @@ public class OnnxOcrEngine {
                 clsSession = null;
             }
 
-            // 加载字符集
             Log.i(TAG, "加载字符集...");
             keys = loadKeys(ctx);
-
             Log.i(TAG, "字符集大小: " + keys.size());
             Log.i(TAG, "ONNX OCR引擎初始化完成");
 
@@ -78,35 +69,43 @@ public class OnnxOcrEngine {
         }
     }
 
-    public List<OcrResult> runBase64(String base64) throws Exception {
-        // 1. 解码 base64
+    /**
+     * 执行 OCR 识别
+     *
+     * @param base64  Base64 编码的图片数据
+     * @param offsetX 截图在屏幕中的左上角 X 坐标（未传入 offset 时填 0）
+     * @param offsetY 截图在屏幕中的左上角 Y 坐标（未传入 offset 时填 0）
+     * @return 识别结果列表，坐标为屏幕绝对坐标
+     */
+    public List<OcrResult> runBase64(String base64, float offsetX, float offsetY) throws Exception {
         byte[] imgBytes = Base64.decode(base64, Base64.DEFAULT);
         Bitmap originalBitmap = BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.length);
         if (originalBitmap == null) throw new Exception("Failed to decode base64");
 
-        int w = originalBitmap.getWidth();
-        int h = originalBitmap.getHeight();
-        int newW = ((w + 31) / 32) * 32;
-        int newH = ((h + 31) / 32) * 32;
+        int resizeMul = OcrConfig.Preprocess.RESIZE_MULTIPLE;
+        int origW = originalBitmap.getWidth();
+        int origH = originalBitmap.getHeight();
+        int newW = ((origW + resizeMul - 1) / resizeMul) * resizeMul;
+        int newH = ((origH + resizeMul - 1) / resizeMul) * resizeMul;
 
         Bitmap resizedBitmap = originalBitmap;
-        if (newW != w || newH != h) {
+        if (newW != origW || newH != origH) {
             resizedBitmap = Bitmap.createScaledBitmap(originalBitmap, newW, newH, true);
         }
 
-        // 2. 转 float tensor
+        // 转 float tensor（NCHW）
         float[] inputData = OcrUtils.bitmapToFloatTensor(resizedBitmap);
-        long[] shape = new long[]{1, 3, newH, newW}; // NCHW
+        long[] shape = new long[]{1, 3, newH, newW};
         OnnxTensor inputTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(inputData), shape);
 
-        // 3. 执行 det 模型
-        Map<String, OnnxTensor> inputs = Collections.singletonMap(detSession.getInputNames().iterator().next(), inputTensor);
-        OrtSession.Result run = detSession.run(inputs);
-        float[][][][] output4D = (float[][][][]) run.get(0).getValue(); // 正确类型
+        // 执行检测模型
+        Map<String, OnnxTensor> inputs = Collections.singletonMap(
+                detSession.getInputNames().iterator().next(), inputTensor);
+        OrtSession.Result detRun = detSession.run(inputs);
+        float[][][][] output4D = (float[][][][]) detRun.get(0).getValue();
         int H = output4D[0][0].length;
         int W = output4D[0][0][0].length;
 
-        // 4. 获取输出，假设 det 输出为 float[][][]
         float[][][] detOutput = new float[H][W][1];
         for (int y = 0; y < H; y++) {
             for (int x = 0; x < W; x++) {
@@ -114,20 +113,16 @@ public class OnnxOcrEngine {
             }
         }
 
-
-        // 5. 后处理得到 polygon
+        // 后处理得到 polygon
         List<PointF[]> boxes = DetPostProcess.run(detOutput);
 
-        // 6. 映射回原图
-//        float scaleX = (float) w / newW;
-//        float scaleY = (float) h / newH;
-//        Bitmap bitmapWithBoxes = OcrUtils.drawBoxesOnImage(originalBitmap, boxes, scaleX, scaleY);
+        // 缩放比例：检测框坐标基于 resize 后尺寸，需映射回原图
+        float scaleX = (float) origW / newW;
+        float scaleY = (float) origH / newH;
 
         List<OcrResult> results = new ArrayList<>();
         for (PointF[] poly : boxes) {
-            //todo 计算坐标返回 deepseek
-
-            // 5a. 可选裁剪 RotatedBox
+            // 计算裁剪区域
             RotatedBox box = new RotatedBox(
                     OcrUtils.getBoxCenter(poly),
                     OcrUtils.getBoxWidth(poly),
@@ -137,18 +132,10 @@ public class OnnxOcrEngine {
             Bitmap crop = OcrUtils.cropRotatedBox(resizedBitmap, box);
 
             if (OcrConfig.Det.DO_ANGLE) {
-                // 5b. 执行 Cls（可选）
-                // 2. resize 到 cls 模型输入尺寸
-                // Paddle 官方 cls 输入是：48 x 192（HxW）
-                int clsH = 48;
-                int clsW = 192;
-                Bitmap resizedCls = Bitmap.createScaledBitmap(
-                        crop,
-                        clsW,
-                        clsH,
-                        true
-                );
-                // 3. Bitmap → float[]（NCHW，RGB，归一化到 [0,1]）
+                int clsH = OcrConfig.Cls.IMG_HEIGHT;
+                int clsW = OcrConfig.Cls.IMG_WIDTH;
+                Bitmap resizedCls = Bitmap.createScaledBitmap(crop, clsW, clsH, true);
+
                 float[] clsInputData = new float[3 * clsH * clsW];
                 int[] pixels = new int[clsH * clsW];
                 resizedCls.getPixels(pixels, 0, clsW, 0, 0, clsW, clsH);
@@ -167,28 +154,16 @@ public class OnnxOcrEngine {
                     }
                 }
 
-                // 4. 创建 OnnxTensor（注意是 4 维）
                 long[] clsShape = new long[]{1, 3, clsH, clsW};
-                OnnxTensor clsTensor = OnnxTensor.createTensor(
-                        env,
-                        FloatBuffer.wrap(clsInputData),
-                        clsShape
-                );
+                OnnxTensor clsTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(clsInputData), clsShape);
 
-                // 5. 执行 cls
                 String clsInputName = clsSession.getInputNames().iterator().next();
                 OrtSession.Result clsRun = clsSession.run(
-                        Collections.singletonMap(clsInputName, clsTensor)
-                );
+                        Collections.singletonMap(clsInputName, clsTensor));
 
-                // 6. 取输出（shape = [1, 2]）
                 float[][] clsOutput = (float[][]) clsRun.get(0).getValue();
+                ClsPostProcess.TextDirection dir = ClsPostProcess.getDirection(clsOutput);
 
-                // 7. 后处理：判断方向
-                ClsPostProcess.TextDirection dir =
-                        ClsPostProcess.getDirection(clsOutput);
-
-                // 8. 如果是 180°，旋转 crop
                 if (dir == ClsPostProcess.TextDirection.ROTATE_180) {
                     crop = rotateBitmap(crop, ClsPostProcess.TextDirection.ROTATE_180);
                 }
@@ -196,37 +171,65 @@ public class OnnxOcrEngine {
                 clsTensor.close();
                 clsRun.close();
             }
-            //rec
-            OcrResult ocrResult = RecPostProcess.runRec(recSession, env, crop, keys);
 
-            // 过滤 score
+            // 识别
+            OcrResult ocrResult = RecPostProcess.runRec(recSession, env, crop, keys);
             if (ocrResult.score < OcrConfig.Rec.REC_SCORE_THRESHOLD) {
                 continue;
             }
+
+            // 填充坐标（屏幕绝对坐标）
+            fillCoordinates(ocrResult, poly, scaleX, scaleY, offsetX, offsetY);
+
             results.add(ocrResult);
         }
+
+        inputTensor.close();
+        detRun.close();
         Log.d(TAG, "runBase64: " + results);
         return results;
     }
 
+    /**
+     * 填充检测框的坐标信息
+     *
+     * @param result   OcrResult（由 RecPostProcess 填充了 text 和 score）
+     * @param poly     检测框 4 个角点（基于 resize 后尺寸）
+     * @param scaleX   X 方向缩放比例
+     * @param scaleY   Y 方向缩放比例
+     * @param offsetX  截图在屏幕中的 X 偏移
+     * @param offsetY  截图在屏幕中的 Y 偏移
+     */
+    private void fillCoordinates(OcrResult result, PointF[] poly,
+                                  float scaleX, float scaleY,
+                                  float offsetX, float offsetY) {
+        // 中心点
+        float centerX = 0, centerY = 0;
+        for (PointF p : poly) {
+            centerX += p.x;
+            centerY += p.y;
+        }
+        result.centerX = centerX / 4 * scaleX + offsetX;
+        result.centerY = centerY / 4 * scaleY + offsetY;
 
-    // --------------------------------------
-    // Bitmap 旋转
-    // --------------------------------------
+        // 4 个角点（顺时针：左上、右上、右下、左下）
+        result.box = new OcrResult.Point[4];
+        for (int i = 0; i < 4; i++) {
+            result.box[i] = new OcrResult.Point(
+                    poly[i].x * scaleX + offsetX,
+                    poly[i].y * scaleY + offsetY
+            );
+        }
+    }
+
     private Bitmap rotateBitmap(Bitmap bmp, ClsPostProcess.TextDirection dir) {
         Matrix matrix = new Matrix();
         if (dir == ClsPostProcess.TextDirection.ROTATE_180) {
             matrix.postRotate(180);
-        } else if (dir == ClsPostProcess.TextDirection.HORIZONTAL) {
-            matrix.postRotate(0);
         }
         return Bitmap.createBitmap(bmp, 0, 0, bmp.getWidth(), bmp.getHeight(), matrix, true);
     }
 
-
-    /**
-     * 加载模型文件
-     */
     private byte[] load(Context ctx, String name) throws IOException {
         InputStream is = ctx.getAssets().open(name);
         byte[] buf = new byte[is.available()];
@@ -235,12 +238,10 @@ public class OnnxOcrEngine {
         return buf;
     }
 
-    /**
-     * 加载字符集
-     */
     private List<String> loadKeys(Context ctx) throws IOException {
         List<String> list = new ArrayList<>();
-        BufferedReader br = new BufferedReader(new InputStreamReader(ctx.getAssets().open("ppocr_keys_v1.txt")));
+        BufferedReader br = new BufferedReader(
+                new InputStreamReader(ctx.getAssets().open("ppocr_keys_v1.txt")));
         String line;
         while ((line = br.readLine()) != null) {
             list.add(line.trim());
@@ -249,9 +250,6 @@ public class OnnxOcrEngine {
         return list;
     }
 
-    /**
-     * 释放资源
-     */
     public void release() {
         try {
             if (detSession != null) {

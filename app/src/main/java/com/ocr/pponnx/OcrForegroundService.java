@@ -3,50 +3,83 @@ package com.ocr.pponnx;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.ServiceCompat;
 
-import java.io.IOException;
+import com.ocr.pponnx.ocr.OcrConfig;
 
 public class OcrForegroundService extends Service {
 
     private HttpOcrServer server;
 
-    private static final String CHANNEL_ID = "ocr_channel";
+    private static final String CHANNEL_ID = "ocr_service_channel";
     private static final int NOTIFICATION_ID = 1;
 
     @Override
     public void onCreate() {
         super.onCreate();
 
-        createNotificationChannel(); // ✅ 确保 NotificationChannel 已创建
+        createNotificationChannel();
+
+        Intent notificationIntent = new Intent(this, MainActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                this, 0, notificationIntent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+        );
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("OCR HTTP Service")
-                .setContentText("Listening on 127.0.0.1:8080")
+                .setContentTitle(getString(R.string.app_name))
+                .setContentText("OCR 服务运行中 : " + OcrConfig.Server.PORT)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .build();
 
-        startForeground(NOTIFICATION_ID, notification);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            );
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
+        }
 
-        // 启动 HTTP OCR 服务
         try {
-            server = new HttpOcrServer(8080, this);
+            server = new HttpOcrServer(OcrConfig.Server.PORT, this);
             server.start();
+            Toast.makeText(this, "OCR 服务已启动 : " + OcrConfig.Server.PORT, Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
+            Toast.makeText(this, "OCR 服务启动失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
             e.printStackTrace();
         }
     }
 
     @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        return START_STICKY;
+    }
+
+    @Override
     public void onDestroy() {
-        if (server != null) server.stop();
+        if (server != null) {
+            server.stop();
+            Toast.makeText(this, "OCR 服务已停止", Toast.LENGTH_SHORT).show();
+        }
         super.onDestroy();
     }
 
@@ -55,20 +88,20 @@ public class OcrForegroundService extends Service {
         return null;
     }
 
-    // ================= NotificationChannel =================
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            CharSequence name = "OCR Service Channel";
-            String description = "OCR HTTP 服务前台通知";
-            int importance = NotificationManager.IMPORTANCE_LOW;
-
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, name, importance);
-            channel.setDescription(description);
-
             NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-            }
+            if (manager == null) return;
+
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "OCR 服务",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            channel.setDescription("保持 OCR HTTP 服务在后台运行");
+            channel.setShowBadge(false);
+            channel.enableVibration(false);
+            manager.createNotificationChannel(channel);
         }
     }
 }

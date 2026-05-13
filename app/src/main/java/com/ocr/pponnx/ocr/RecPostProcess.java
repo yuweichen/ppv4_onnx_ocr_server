@@ -15,8 +15,6 @@ import ai.onnxruntime.OrtSession;
 
 public class RecPostProcess {
 
-    public static final int MODEL_HEIGHT = 64;
-
     public static OcrResult runRec(OrtSession recSession, OrtEnvironment env,
                                    Bitmap crop, List<String> keys) {
 
@@ -27,11 +25,14 @@ public class RecPostProcess {
         if (recSession == null || crop == null || keys == null || keys.isEmpty()) return result;
 
         try {
-            int inputH = MODEL_HEIGHT; // 固定高度
+            int inputH = OcrConfig.Rec.MODEL_HEIGHT;
             int cropW = crop.getWidth();
             int cropH = Math.max(crop.getHeight(), 1);
 
-            int inputW = Math.max(32, Math.min(320, cropW * inputH / cropH));
+            int inputW = Math.max(
+                    OcrConfig.Rec.MIN_INPUT_WIDTH,
+                    Math.min(OcrConfig.Rec.MAX_INPUT_WIDTH, cropW * inputH / cropH)
+            );
 
             Bitmap resized = Bitmap.createScaledBitmap(crop, inputW, inputH, true);
 

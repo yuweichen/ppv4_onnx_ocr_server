@@ -1,21 +1,59 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ================================================================
+# ppv4_onnx_ocr_server ProGuard 规则
+# ================================================================
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# -------------------- Android 基本 --------------------
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+-keepattributes SourceFile,LineNumberTable
+-keepattributes Signature
+-keepattributes InnerClasses,EnclosingMethod
+-keepattributes Exceptions
+-keepattributes Annotation
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# -------------------- ONNX Runtime --------------------
+
+# ONNX Runtime 必须保留的类和方法
+-keep class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
+
+# -------------------- NanoHTTPD --------------------
+
+-keep class fi.iki.elonen.** { *; }
+-dontwarn fi.iki.elonen.**
+
+# -------------------- org.json --------------------
+
+# JSONObject/JSONArray 的字段通过字符串访问，不能混淆
+-keep public class org.json.** { *; }
+-keepclassmembers class org.json.** { *; }
+
+# -------------------- AndroidX --------------------
+
+-keep class androidx.** { *; }
+-dontwarn androidx.**
+-keep class * extends androidx.** { *; }
+
+# -------------------- App 自身 --------------------
+
+# OnnxOcrEngine 被 HttpOcrServer 通过反射/类名调用
+-keep class com.ocr.pponnx.ocr.OnnxOcrEngine { *; }
+-keep class com.ocr.pponnx.ocr.OcrResult { *; }
+-keep class com.ocr.pponnx.ocr.OcrConfig { *; }
+-keep class com.ocr.pponnx.ocr.DetPostProcess { *; }
+-keep class com.ocr.pponnx.ocr.RecPostProcess { *; }
+-keep class com.ocr.pponnx.ocr.ClsPostProcess { *; }
+-keep class com.ocr.pponnx.ocr.OcrUtils { *; }
+-keep class com.ocr.pponnx.ocr.det.RotatedBox { *; }
+-keep class com.ocr.pponnx.ocr.det.GeometryUtils { *; }
+
+# 枚举保留
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# -------------------- tess-two（未使用但保留以防编译报错） --------------------
+
+-keep class com.googlecode.tesseract.** { *; }
+-keep class com.googlecode.leptonica.** { *; }
+-dontwarn com.googlecode.**

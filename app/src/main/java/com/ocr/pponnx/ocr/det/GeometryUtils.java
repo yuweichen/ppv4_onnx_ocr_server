@@ -11,101 +11,137 @@ import java.util.List;
 public class GeometryUtils {
 
     /**
-     * 最小外接矩形（旋转矩形）算法
-     * @param points 输入点集
-     * @return RotatedBox
+     * 接收原始数组的最小外接矩形（避免创建 PointF 对象）
      */
-    public static RotatedBox minAreaRect(List<PointF> points) {
-        if (points.size() < 3) {
-            // 少于3点就用 axis-aligned
+    public static RotatedBox minAreaRect(float[] xs, float[] ys, int count) {
+        if (count < 3) {
             float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
             float maxX = Float.MIN_VALUE, maxY = Float.MIN_VALUE;
-            for (PointF p : points) {
-                minX = Math.min(minX, p.x);
-                minY = Math.min(minY, p.y);
-                maxX = Math.max(maxX, p.x);
-                maxY = Math.max(maxY, p.y);
+            for (int i = 0; i < count; i++) {
+                minX = Math.min(minX, xs[i]);
+                minY = Math.min(minY, ys[i]);
+                maxX = Math.max(maxX, xs[i]);
+                maxY = Math.max(maxY, ys[i]);
             }
             PointF center = new PointF((minX + maxX) / 2, (minY + maxY) / 2);
             return new RotatedBox(center, maxX - minX, maxY - minY, 0);
         }
 
-        // 简化实现：用凸包的边计算最小面积矩形
-        List<PointF> hull = convexHull(points);
+        // ---------- 凸包（使用原始数组） ----------
+        int[] stack = new int[count];
+        int top = 0;
+
+        // 找最左下的点
+        int base = 0;
+        for (int i = 1; i < count; i++) {
+            if (ys[i] < ys[base] || (ys[i] == ys[base] && xs[i] < xs[base])) {
+                base = i;
+            }
+        }
+
+        // 极角排序（叉积判断）
+        final int fb = base;
+        Integer[] order = new Integer[count];
+        for (int i = 0; i < count; i++) order[i] = i;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            java.util.Arrays.sort(order, (a, b) -> {
+                if (a == fb) return -1;
+                if (b == fb) return 1;
+                float cross = cross(xs[fb], ys[fb], xs[a], ys[a], xs[b], ys[b]);
+                if (cross > 0) return -1;
+                if (cross < 0) return 1;
+                return Float.compare(
+                        (xs[a] - xs[fb]) * (xs[a] - xs[fb]) + (ys[a] - ys[fb]) * (ys[a] - ys[fb]),
+                        (xs[b] - xs[fb]) * (xs[b] - xs[fb]) + (ys[b] - ys[fb]) * (ys[b] - ys[fb])
+                );
+            });
+        }
+
+        stack[top++] = fb;
+        for (int k = 0; k < count; k++) {
+            int i = order[k];
+            if (i == fb) continue;
+            while (top >= 2) {
+                int j = stack[top - 1];
+                int k2 = stack[top - 2];
+                if (cross(xs[k2], ys[k2], xs[j], ys[j], xs[i], ys[i]) <= 0) {
+                    top--;
+                } else {
+                    break;
+                }
+            }
+            stack[top++] = i;
+        }
+
+        int hullSize = top;
+        float[] hx = new float[hullSize];
+        float[] hy = new float[hullSize];
+        for (int i = 0; i < hullSize; i++) {
+            int idx = stack[i];
+            hx[i] = xs[idx];
+            hy[i] = ys[idx];
+        }
+
+        // ---------- 求最小面积旋转矩形 ----------
         float minArea = Float.MAX_VALUE;
         RotatedBox bestBox = null;
 
-        int n = hull.size();
-        for (int i = 0; i < n; i++) {
-            PointF p1 = hull.get(i);
-            PointF p2 = hull.get((i + 1) % n);
-            float angle = (float) Math.atan2(p2.y - p1.y, p2.x - p1.x);
+        for (int i = 0; i < hullSize; i++) {
+            float x1 = hx[i], y1 = hy[i];
+            float x2 = hx[(i + 1) % hullSize], y2 = hy[(i + 1) % hullSize];
 
+            float dx = x2 - x1;
+            float dy = y2 - y1;
+            float angle = (float) Math.atan2(dy, dx);
             float cosA = (float) Math.cos(-angle);
             float sinA = (float) Math.sin(-angle);
 
             float minX = Float.MAX_VALUE, maxX = Float.MIN_VALUE;
             float minY = Float.MAX_VALUE, maxY = Float.MIN_VALUE;
 
-            for (PointF p : hull) {
-                float x = p.x * cosA - p.y * sinA;
-                float y = p.x * sinA + p.y * cosA;
-                minX = Math.min(minX, x);
-                maxX = Math.max(maxX, x);
-                minY = Math.min(minY, y);
-                maxY = Math.max(maxY, y);
+            for (int j = 0; j < hullSize; j++) {
+                float rx = hx[j] * cosA - hy[j] * sinA;
+                float ry = hx[j] * sinA + hy[j] * cosA;
+                if (rx < minX) minX = rx;
+                if (rx > maxX) maxX = rx;
+                if (ry < minY) minY = ry;
+                if (ry > maxY) maxY = ry;
             }
 
             float area = (maxX - minX) * (maxY - minY);
             if (area < minArea) {
                 minArea = area;
-                // 旋转矩形中心
                 float cx = (minX + maxX) / 2;
                 float cy = (minY + maxY) / 2;
-                // 转回原坐标
                 PointF center = new PointF(
-                        cx * cosA + cy * -sinA,
-                        cx * sinA + cy * cosA
+                        cx * cosA + cy * sinA,
+                        -cx * sinA + cy * cosA
                 );
                 bestBox = new RotatedBox(center, maxX - minX, maxY - minY, angle);
             }
         }
-        return bestBox;
+
+        return bestBox != null ? bestBox : new RotatedBox(new PointF(0, 0), 0, 0, 0);
     }
 
     /**
-     * Graham 扫描凸包
+     * 保留原有接口，内部委托到原始数组版本
      */
-    private static List<PointF> convexHull(List<PointF> points) {
-        if (points.size() <= 3) return new ArrayList<>(points);
-
-        List<PointF> pts = new ArrayList<>(points);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            Collections.sort(pts, Comparator.comparingDouble(p -> p.x * 1e6 + p.y)); // 简单排序
+    public static RotatedBox minAreaRect(List<PointF> points) {
+        int count = points.size();
+        float[] xs = new float[count];
+        float[] ys = new float[count];
+        for (int i = 0; i < count; i++) {
+            xs[i] = points.get(i).x;
+            ys[i] = points.get(i).y;
         }
-
-        List<PointF> lower = new ArrayList<>();
-        for (PointF p : pts) {
-            while (lower.size() >= 2 && cross(lower.get(lower.size() - 2), lower.get(lower.size() - 1), p) <= 0)
-                lower.remove(lower.size() - 1);
-            lower.add(p);
-        }
-
-        List<PointF> upper = new ArrayList<>();
-        for (int i = pts.size() - 1; i >= 0; i--) {
-            PointF p = pts.get(i);
-            while (upper.size() >= 2 && cross(upper.get(upper.size() - 2), upper.get(upper.size() - 1), p) <= 0)
-                upper.remove(upper.size() - 1);
-            upper.add(p);
-        }
-
-        lower.remove(lower.size() - 1);
-        upper.remove(upper.size() - 1);
-        lower.addAll(upper);
-        return lower;
+        return minAreaRect(xs, ys, count);
     }
 
-    private static float cross(PointF O, PointF A, PointF B) {
-        return (A.x - O.x) * (B.y - O.y) - (A.y - O.y) * (B.x - O.x);
+    /**
+     * 叉积 (x1,y1)->(x2,y2) 与 (x1,y1)->(x3,y3)
+     */
+    private static float cross(float x1, float y1, float x2, float y2, float x3, float y3) {
+        return (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
     }
 }
