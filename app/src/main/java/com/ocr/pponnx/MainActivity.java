@@ -3,11 +3,9 @@ package com.ocr.pponnx;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.PowerManager;
-import android.provider.Settings;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -17,6 +15,7 @@ import androidx.core.content.ContextCompat;
 public class MainActivity extends AppCompatActivity {
 
     private static final int REQUEST_NOTIFICATION = 1001;
+    private boolean batteryTipShown = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -27,13 +26,7 @@ public class MainActivity extends AppCompatActivity {
 
         findViewById(R.id.btnStart).setOnClickListener(v -> {
             if (!checkNotificationPermission()) return;
-            if (!isIgnoringBatteryOptimizations()) {
-                showBatteryTip();
-            }
-            Intent i = new Intent(this, OcrForegroundService.class);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(i);
-            }
+            startOcrService();
         });
 
         findViewById(R.id.btnStop).setOnClickListener(v -> {
@@ -67,27 +60,25 @@ public class MainActivity extends AppCompatActivity {
         return true;
     }
 
+    private void startOcrService() {
+        if (!batteryTipShown) {
+            batteryTipShown = true;
+            if (!isIgnoringBatteryOptimizations()) {
+                Toast.makeText(this, "建议在手机设置中关闭本应用的省电/电池优化，防止后台被杀", Toast.LENGTH_LONG).show();
+            }
+        }
+
+        Intent i = new Intent(this, OcrForegroundService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(i);
+        }
+    }
+
     private boolean isIgnoringBatteryOptimizations() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
             return pm.isIgnoringBatteryOptimizations(getPackageName());
         }
         return true;
-    }
-
-    private void showBatteryTip() {
-        Toast.makeText(this, "建议关闭电池优化以保持后台运行", Toast.LENGTH_LONG).show();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-                intent.setData(Uri.parse("package:" + getPackageName()));
-                startActivity(intent);
-            } catch (Exception e) {
-                try {
-                    startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
-                } catch (Exception ignored) {
-                }
-            }
-        }
     }
 }

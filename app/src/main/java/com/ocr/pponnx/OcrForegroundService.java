@@ -37,7 +37,7 @@ public class OcrForegroundService extends Service {
 
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(getString(R.string.app_name))
-                .setContentText("OCR 服务运行中 : " + OcrConfig.Server.PORT)
+                .setContentText("OCR 服务运行中 : " + OcrConfig.Server.PORT + "，请勿左滑关闭此通知,可能导致后台服务失效")
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentIntent(pendingIntent)
                 .setOngoing(true)
