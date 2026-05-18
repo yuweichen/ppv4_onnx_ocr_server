@@ -36,6 +36,8 @@ public class MainActivity extends AppCompatActivity {
             Intent i = new Intent(this, OcrForegroundService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(i);
+            } else {
+                startService(i);
             }
         });
 
